@@ -30,22 +30,26 @@ use PHPUnit\Event;
 use PHPUnit\Event\Code\TestDox;
 use PHPUnit\Event\Code\TestMethod;
 use PHPUnit\Event\NoPreviousThrowableException;
+use PHPUnit\Event\TestData\MoreThanOneDataSetFromDataProviderException;
 use PHPUnit\Metadata\Api\Dependencies;
 use PHPUnit\Metadata\Api\Groups;
 use PHPUnit\Metadata\Api\HookMethods;
 use PHPUnit\Metadata\Api\Requirements;
 use PHPUnit\Metadata\MetadataCollection;
+use PHPUnit\Metadata\Parser\Registry as MetadataRegistry;
 use PHPUnit\Runner\Exception as RunnerException;
 use PHPUnit\Runner\Filter\Factory;
 use PHPUnit\Runner\PhptTestCase;
 use PHPUnit\Runner\TestSuiteLoader;
 use PHPUnit\TestRunner\TestResult\Facade;
 use PHPUnit\TextUI\Configuration\Registry;
+use PHPUnit\Util\Exception as UtilException;
 use PHPUnit\Util\Filter;
 use PHPUnit\Util\Reflection;
 use PHPUnit\Util\Test as TestUtil;
 use ReflectionClass;
 use ReflectionMethod;
+use SebastianBergmann\CodeCoverage\StaticAnalysisCacheNotConfiguredException;
 use SebastianBergmann\CodeCoverage\UnintentionallyCoveredCodeException;
 use Throwable;
 
@@ -77,6 +81,8 @@ class TestSuite implements IteratorAggregate, Reorderable, SelfDescribing, Test
     private readonly bool $stopOnIncomplete;
     private readonly bool $stopOnSkipped;
     private readonly bool $stopOnDefect;
+
+    private ?bool $runClassInSeparateProcess = null;
 
     public static function empty(string $name = null): static
     {
@@ -139,6 +145,10 @@ class TestSuite implements IteratorAggregate, Reorderable, SelfDescribing, Test
                     $class->getName()
                 )
             );
+        }
+
+        if ($testSuite->shouldAllTestMethodsOfTestClassBeRunInSingleSeparateProcess($class->getName())) {
+            $testSuite->setRunClassInSeparateProcess(true);
         }
 
         return $testSuite;
@@ -328,6 +338,11 @@ class TestSuite implements IteratorAggregate, Reorderable, SelfDescribing, Test
      * @throws Exception
      * @throws NoPreviousThrowableException
      * @throws UnintentionallyCoveredCodeException
+     * @throws RunnerException
+     * @throws UtilException
+     * @throws MoreThanOneDataSetFromDataProviderException
+     * @throws ProcessIsolationException
+     * @throws StaticAnalysisCacheNotConfiguredException
      */
     public function run(): void
     {
@@ -344,12 +359,20 @@ class TestSuite implements IteratorAggregate, Reorderable, SelfDescribing, Test
             return;
         }
 
-        foreach ($this as $test) {
-            if ($this->shouldStop()) {
-                break;
-            }
+        if ($this->shouldRunInSeparateProcess()) {
+            (new TestRunner)->runInSeparateProcess($this, false);
+        } else {
+            foreach ($this as $test) {
+                if ($this->shouldStop()) {
+                    break;
+                }
 
-            $test->run();
+                if ($test instanceof self && $test->shouldRunInSeparateProcess()) {
+                    (new TestRunner)->runInSeparateProcess($test, false);
+                } else {
+                    $test->run();
+                }
+            }
         }
 
         $this->invokeMethodsAfterLastTest($emitter);
@@ -375,6 +398,13 @@ class TestSuite implements IteratorAggregate, Reorderable, SelfDescribing, Test
     public function setTests(array $tests): void
     {
         $this->tests = $tests;
+    }
+
+    private function setRunClassInSeparateProcess(bool $runClassInSeparateProcess): void
+    {
+        if ($this->runClassInSeparateProcess === null) {
+            $this->runClassInSeparateProcess = $runClassInSeparateProcess;
+        }
     }
 
     /**
@@ -721,5 +751,25 @@ class TestSuite implements IteratorAggregate, Reorderable, SelfDescribing, Test
                 ...$methodsCalledAfterLastTest
             );
         }
+    }
+
+    public function shouldRunInSeparateProcess(): bool
+    {
+        if ($this->runClassInSeparateProcess) {
+            return true;
+        }
+
+        // TODO: maybe a new option for "classIsolation" or "processIsolationClass"
+        // return Registry::get()->processIsolation();
+
+        return false;
+    }
+
+    /**
+     * @psalm-param class-string $className
+     */
+    private function shouldAllTestMethodsOfTestClassBeRunInSingleSeparateProcess(string $className): bool
+    {
+        return MetadataRegistry::parser()->forClass($className)->isRunClassInSeparateProcess()->isNotEmpty();
     }
 }

@@ -252,11 +252,13 @@ final class TestRunner
      * @throws ProcessIsolationException
      * @throws StaticAnalysisCacheNotConfiguredException
      */
-    public function runInSeparateProcess(TestCase $test, bool $runEntireClass, bool $preserveGlobalState): void
+    public function runInSeparateProcess(TestCase|TestSuite $test, bool $preserveGlobalState): void
     {
         $class = new ReflectionClass($test);
 
-        if ($runEntireClass) {
+        $isTestSuite = $test instanceof TestSuite;
+
+        if ($isTestSuite) {
             $template = new Template(
                 __DIR__ . '/../Util/PHP/Template/TestCaseClass.tpl'
             );
@@ -297,45 +299,59 @@ final class TestRunner
             $phar = '\'\'';
         }
 
-        $data            = var_export(serialize($test->providedData()), true);
-        $dataName        = var_export($test->dataName(), true);
-        $dependencyInput = var_export(serialize($test->dependencyInput()), true);
-        $includePath     = var_export(get_include_path(), true);
-        // must do these fixes because TestCaseMethod.tpl has unserialize('{data}') in it, and we can't break BC
-        // the lines above used to use addcslashes() rather than var_export(), which breaks null byte escape sequences
-        $data            = "'." . $data . ".'";
-        $dataName        = "'.(" . $dataName . ").'";
-        $dependencyInput = "'." . $dependencyInput . ".'";
-        $includePath     = "'." . $includePath . ".'";
+        $tests = $isTestSuite ? $test->tests() : [$test];
+        $var   = [];
+
+        $testData = [];
+        foreach ($tests as $t) {
+            assert($t instanceof TestCase);
+
+            $testCaseClass = new ReflectionClass($t);
+
+            $data            = serialize($t->providedData());
+            $dataName        = serialize($t->dataName());
+            $dependencyInput = serialize($t->dependencyInput());
+
+            $testData[] = [
+                'data'            => $data,
+                'dataName'        => $dataName,
+                'dependencyInput' => $dependencyInput,
+                'methodName'      => $t->name(),
+                'className'       => $testCaseClass->getName(),
+            ];
+        }
+
+        if ($isTestSuite) {
+            foreach ($testData as $data) {
+                $var['testData'][] = $data;
+            }
+            $var['testData'] = serialize($var['testData']);
+        } else {
+            $var = $testData[0];
+        }
+
+        $includePath = serialize(get_include_path());
 
         $offset = hrtime();
 
         $serializedConfiguration = $this->saveConfigurationForChildProcess();
 
-        $var = [
+        $var = array_merge($var, [
             'bootstrap'                      => $bootstrap,
             'composerAutoload'               => $composerAutoload,
             'phar'                           => $phar,
             'filename'                       => $class->getFileName(),
             'className'                      => $class->getName(),
             'collectCodeCoverageInformation' => $coverage,
-            'data'                           => $data,
-            'dataName'                       => $dataName,
-            'dependencyInput'                => $dependencyInput,
             'constants'                      => $constants,
             'globals'                        => $globals,
             'include_path'                   => $includePath,
             'included_files'                 => $includedFiles,
             'iniSettings'                    => $iniSettings,
-            'name'                           => $test->name(),
             'offsetSeconds'                  => $offset[0],
             'offsetNanoseconds'              => $offset[1],
             'serializedConfiguration'        => $serializedConfiguration,
-        ];
-
-        if (!$runEntireClass) {
-            $var['methodName'] = $test->name();
-        }
+        ]);
 
         $template->setVar($var);
 

@@ -47,7 +47,6 @@ final class TestBuilder
                 $data,
                 $this->shouldTestMethodBeRunInSeparateProcess($className, $methodName),
                 $this->shouldGlobalStateBePreserved($className, $methodName),
-                $this->shouldAllTestMethodsOfTestClassBeRunInSingleSeparateProcess($className),
                 $this->backupSettings($className, $methodName)
             );
         } else {
@@ -59,7 +58,6 @@ final class TestBuilder
                 $test,
                 $this->shouldTestMethodBeRunInSeparateProcess($className, $methodName),
                 $this->shouldGlobalStateBePreserved($className, $methodName),
-                $this->shouldAllTestMethodsOfTestClassBeRunInSingleSeparateProcess($className),
                 $this->backupSettings($className, $methodName)
             );
         }
@@ -68,10 +66,10 @@ final class TestBuilder
     }
 
     /**
-     * @psalm-param class-string $className
+     * @psalm-param class-string                                                                                                                                                      $className
      * @psalm-param array{backupGlobals: ?bool, backupGlobalsExcludeList: list<string>, backupStaticProperties: ?bool, backupStaticPropertiesExcludeList: array<string,list<string>>} $backupSettings
      */
-    private function buildDataProviderTestSuite(string $methodName, string $className, array $data, bool $runTestInSeparateProcess, ?bool $preserveGlobalState, bool $runClassInSeparateProcess, array $backupSettings): DataProviderTestSuite
+    private function buildDataProviderTestSuite(string $methodName, string $className, array $data, bool $runTestInSeparateProcess, ?bool $preserveGlobalState, array $backupSettings): DataProviderTestSuite
     {
         $dataProviderTestSuite = DataProviderTestSuite::empty(
             $className . '::' . $methodName
@@ -90,7 +88,6 @@ final class TestBuilder
                 $_test,
                 $runTestInSeparateProcess,
                 $preserveGlobalState,
-                $runClassInSeparateProcess,
                 $backupSettings
             );
 
@@ -103,14 +100,10 @@ final class TestBuilder
     /**
      * @psalm-param array{backupGlobals: ?bool, backupGlobalsExcludeList: list<string>, backupStaticProperties: ?bool, backupStaticPropertiesExcludeList: array<string,list<string>>} $backupSettings
      */
-    private function configureTestCase(TestCase $test, bool $runTestInSeparateProcess, ?bool $preserveGlobalState, bool $runClassInSeparateProcess, array $backupSettings): void
+    private function configureTestCase(TestCase $test, bool $runTestInSeparateProcess, ?bool $preserveGlobalState, array $backupSettings): void
     {
         if ($runTestInSeparateProcess) {
             $test->setRunTestInSeparateProcess(true);
-        }
-
-        if ($runClassInSeparateProcess) {
-            $test->setRunClassInSeparateProcess(true);
         }
 
         if ($preserveGlobalState !== null) {
@@ -253,13 +246,5 @@ final class TestBuilder
         }
 
         return false;
-    }
-
-    /**
-     * @psalm-param class-string $className
-     */
-    private function shouldAllTestMethodsOfTestClassBeRunInSingleSeparateProcess(string $className): bool
-    {
-        return MetadataRegistry::parser()->forClass($className)->isRunClassInSeparateProcess()->isNotEmpty();
     }
 }

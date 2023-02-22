@@ -24,9 +24,9 @@ final class SeparateClassRunMethodInNewProcessTest extends TestCase
 
     public const INITIAL_PARENT_PROCESS_ID = 0;
 
-    public const INITIAL_PROCESS_ID = 1;
-    public static $parentProcessId  = self::INITIAL_PARENT_PROCESS_ID;
-    public static $processId        = self::INITIAL_PROCESS_ID;
+    public const INITIAL_PROCESS_ID    = 1;
+    public static int $parentProcessId = self::INITIAL_PARENT_PROCESS_ID;
+    public static int $processId       = self::INITIAL_PROCESS_ID;
 
     public static function setUpBeforeClass(): void
     {
